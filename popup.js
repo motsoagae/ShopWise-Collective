@@ -1,6 +1,14 @@
-// Load and display tracked products
+// ShopWise Popup Script
 document.addEventListener('DOMContentLoaded', () => {
   loadProducts();
+  
+  document.getElementById('clear-all').addEventListener('click', () => {
+    if (confirm('Are you sure you want to clear all tracked products? This cannot be undone.')) {
+      chrome.storage.local.set({ products: {} }, () => {
+        loadProducts();
+      });
+    }
+  });
 });
 
 function loadProducts() {
@@ -14,33 +22,58 @@ function loadProducts() {
     
     let totalChecks = 0;
     Object.values(products).forEach(p => {
-      totalChecks += p.history.length;
+      totalChecks += (p.history || []).length;
     });
     document.getElementById('price-checks').textContent = totalChecks;
     
-    // Display products
-    if (productCount === 0) {
-      return; // Keep empty state
+    // Show/hide clear button
+    const clearBtn = document.getElementById('clear-all');
+    if (productCount > 0) {
+      clearBtn.style.display = 'block';
+    } else {
+      clearBtn.style.display = 'none';
     }
     
-    const productsArray = Object.entries(products).map(([asin, data]) => ({
-      asin,
+    // Display products
+    if (productCount === 0) {
+      productsList.innerHTML = `
+        <div class="empty">
+          <div class="empty-icon">🛍️</div>
+          <div class="empty-title">No products yet</div>
+          <div class="empty-text">Visit Amazon or Takealot product pages<br>to start tracking prices!</div>
+        </div>
+      `;
+      return;
+    }
+    
+    const productsArray = Object.entries(products).map(([id, data]) => ({
+      id,
       ...data
     }));
     
     // Sort by most recent
     productsArray.sort((a, b) => {
-      const aLast = a.history[a.history.length - 1].timestamp;
-      const bLast = b.history[b.history.length - 1].timestamp;
+      const aLast = a.lastChecked || a.history[a.history.length - 1].timestamp;
+      const bLast = b.lastChecked || b.history[b.history.length - 1].timestamp;
       return bLast - aLast;
     });
     
     productsList.innerHTML = productsArray.map(product => {
       const latest = product.history[product.history.length - 1];
+      const siteName = formatSiteName(product.site);
+      const currency = product.site === 'takealot' ? 'R' : '$';
+      const imageHtml = product.image 
+        ? `<img src="${product.image}" class="product-image" alt="${product.title}">` 
+        : `<div class="product-image"></div>`;
+      
       return `
         <div class="product" data-url="${product.url}">
-          <div class="product-title">${product.title}</div>
-          <div class="product-price">$${latest.price.toFixed(2)}</div>
+          ${imageHtml}
+          <div class="product-info">
+            <div class="product-site">${siteName}</div>
+            <div class="product-title">${escapeHtml(product.title)}</div>
+            <div class="product-price">${currency}${latest.price.toFixed(2)}</div>
+          </div>
         </div>
       `;
     }).join('');
@@ -52,4 +85,19 @@ function loadProducts() {
       });
     });
   });
+}
+
+function formatSiteName(site) {
+  const names = {
+    'amazon_us': 'Amazon.com',
+    'amazon_za': 'Amazon.co.za',
+    'takealot': 'Takealot'
+  };
+  return names[site] || site;
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
 }
